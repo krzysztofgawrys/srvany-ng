@@ -245,16 +245,18 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
 
     do {
         //Try to launch the target application.
-        if (hThread == NULL && CreateProcess(NULL, appStringWithParams, NULL, NULL, FALSE, dwFlags, applicationEnvironment, applicationDirectory, &startupInfo, &g_Process))
+        if (CreateProcess(NULL, appStringWithParams, NULL, NULL, FALSE, dwFlags, applicationEnvironment, applicationDirectory, &startupInfo, &g_Process))
         {
-            ServiceSetState(SERVICE_ACCEPT_STOP, SERVICE_RUNNING, 0);
-            hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
             if (hThread == NULL)
             {
-                ServiceSetState(0, SERVICE_STOPPED, GetLastError());
+                ServiceSetState(SERVICE_ACCEPT_STOP, SERVICE_RUNNING, 0);
+                hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
+                if (hThread == NULL)
+                {
+                    ServiceSetState(0, SERVICE_STOPPED, GetLastError());
+                }
             }
-            WaitForSingleObject(hThread, INFINITE); //Wait here for a stop signal.
-            hThread = NULL;
+            WaitForSingleObject(g_Process.hThread, INFINITE); //Wait here for a stop signal.
         }
         Sleep(dwTimeout);
     } while (bRestart);
