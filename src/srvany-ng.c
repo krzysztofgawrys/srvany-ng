@@ -127,7 +127,7 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     HKEY   openedKey;
     DWORD  cbData;
     DWORD  dwRestart = 0;
-    DWORD  dwTimeout = 60;
+    DWORD  dwTimeout = 60000;
     boolean bRestart = FALSE;
 
     if (keyPath == NULL || applicationString == NULL || applicationDirectory == NULL || applicationParameters == NULL || applicationEnvironment == NULL || appStringWithParams == NULL)
@@ -202,15 +202,24 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     DWORD dwBufSize = sizeof(DWORD);
     if (RegQueryValueEx(openedKey, TEXT("RestartApp"), NULL, NULL, (LPBYTE)(&dwRestart), &dwBufSize) == ERROR_SUCCESS)
     {
-        if (dwRestart != 0) {
+        if (dwRestart != 0)
+        {
             bRestart = TRUE;
         }
     }
 
     if (RegQueryValueEx(openedKey, TEXT("RestartTimeout"), NULL, NULL, (LPBYTE)(&dwTimeout), &dwBufSize) != ERROR_SUCCESS)
     {
-        if (bRestart == TRUE) {
-            dwTimeout = 0;
+        if (bRestart == TRUE)
+        {
+            dwTimeout = 60000; //Restart timeout is mandatory, unless we want infinite amount of apps launched
+        }
+    }
+    else
+    {
+        if (dwTimeout < 10000)
+        {
+            dwTimeout = 60000;
         }
     }
 
