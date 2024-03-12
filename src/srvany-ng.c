@@ -104,6 +104,41 @@ void WINAPI ServiceCtrlHandler(DWORD CtrlCode)
     }
 }//end ServiceCtrlHandler()
 
+void LaunchProcess(
+	__in		BOOL bRestart,
+	__in		DWORD dwTimeout,
+	__inout_opt LPWSTR lpCommandLine,
+	__in_opt    LPSECURITY_ATTRIBUTES lpProcessAttributes,
+	__in_opt    LPSECURITY_ATTRIBUTES lpThreadAttributes,
+	__in        BOOL bInheritHandles,
+	__in        DWORD dwCreationFlags,
+	__in_opt    LPVOID lpEnvironment,
+	__in_opt    LPCWSTR lpCurrentDirectory,
+	__in        LPSTARTUPINFOW lpStartupInfo,
+	__out       LPPROCESS_INFORMATION lpProcessInformation
+	) {
+
+	HANDLE hThread = NULL;
+
+	do {
+		//Try to launch the target application.
+		if (hThread == NULL && CreateProcess(NULL, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation))
+		{
+			ServiceSetState(SERVICE_ACCEPT_STOP, SERVICE_RUNNING, 0);
+			hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
+			if (hThread == NULL)
+			{
+				ServiceSetState(0, SERVICE_STOPPED, GetLastError());
+			}
+			WaitForSingleObject(hThread, INFINITE); //Wait here for a stop signal.
+			hThread = NULL;
+		}
+		Sleep(dwTimeout);
+	} while (bRestart);
+
+	return;
+}
+
 
 /*
  * Main entry point for the service. Acts in a similar fasion to main().
@@ -127,6 +162,9 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     TCHAR* appStringWithParams    = (TCHAR*)calloc(MAX_DATA_LENGTH * 2, sizeof(TCHAR));
     HKEY   openedKey;
     DWORD  cbData;
+    DWORD  dwRestart = 0;
+    DWORD  dwTimeout = 60;
+    boolean bRestart = FALSE;
 
     if (keyPath == NULL || applicationString == NULL || applicationDirectory == NULL || applicationParameters == NULL || applicationEnvironment == NULL || appStringWithParams == NULL)
     {
@@ -197,6 +235,21 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
         }
     }
 
+	DWORD dwBufSize = sizeof(DWORD);
+	if (RegQueryValueEx(openedKey, TEXT("RestartApp"), NULL, NULL, (LPBYTE)(&dwRestart), &dwBufSize) == ERROR_SUCCESS)
+	{
+		if (dwRestart != 0) {
+			bRestart = TRUE;
+		}
+	}
+
+	if (RegQueryValueEx(openedKey, TEXT("RestartTimeout"), NULL, NULL, (LPBYTE)(&dwTimeout), &dwBufSize) != ERROR_SUCCESS)
+	{
+		if (bRestart == TRUE) {
+			dwTimeout = 0;
+		}
+	}
+
     STARTUPINFO startupInfo;
     ZeroMemory(&startupInfo, sizeof(STARTUPINFO));
     startupInfo.cb = sizeof(STARTUPINFO);
@@ -215,18 +268,7 @@ void WINAPI ServiceMain(DWORD argc, TCHAR *argv[])
     dwFlags |= CREATE_UNICODE_ENVIRONMENT;
 #endif
 
-    //Try to launch the target application.
-    if (CreateProcess(NULL, appStringWithParams, NULL, NULL, FALSE, dwFlags, applicationEnvironment, applicationDirectory, &startupInfo, &g_Process))
-    {
-        ServiceSetState(SERVICE_ACCEPT_STOP, SERVICE_RUNNING, 0);
-        HANDLE hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
-        if (hThread == NULL)
-        {
-            ServiceSetState(0, SERVICE_STOPPED, GetLastError());
-            return;
-        }
-        WaitForSingleObject(hThread, INFINITE); //Wait here for a stop signal.
-    }
+	LaunchProcess(bRestart, dwTimeout, appStringWithParams, NULL, NULL, FALSE, dwFlags, applicationEnvironment, applicationDirectory, &startupInfo, &g_Process);
 
     CloseHandle(g_ServiceStopEvent);
     ServiceSetState(0, SERVICE_STOPPED, 0);
